@@ -11,6 +11,13 @@ from dataset import Dataset
 from discriminator import Discriminator
 from generator import Generator
 
+from torch.nn import DataParallel
+
+try:
+    from apex import amp
+except ImportError:
+    raise ImportError("Please install apex from https://www.github.com/nvidia/apex to run this example.")
+
 
 def train(opts):
     # Define environment
@@ -48,6 +55,11 @@ def train(opts):
     real_sample_grid = image_grid(real_sample_images)
     real_sample_grid.save(os.path.join(opts.output_path, f"real.png"))
 
+    generator, optimizer_g = amp.initialize(generator, optimizer_g,
+                                      opt_level="O1")
+    discriminator, optimizer_d = amp.initialize(discriminator, optimizer_d,
+                                      opt_level="O1")
+
     # Train loop
     for iteration, images in enumerate(train_dataloader):
         # Move data to gpu
@@ -69,7 +81,9 @@ def train(opts):
 
         # backprop through generator
         optimizer_g.zero_grad()
-        loss_generator.backward()
+        with amp.scale_loss(loss_generator, optimizer_g) as scaled_loss:
+            scaled_loss.backward()
+        #loss_generator.backward()
         optimizer_g.step()
 
         # Train discriminator
@@ -87,7 +101,9 @@ def train(opts):
 
         # backprop through discriminator
         optimizer_d.zero_grad()
-        loss_discriminator.backward()
+        with amp.scale_loss(loss_discriminator, optimizer_d) as scaled_loss:
+            scaled_loss.backward()
+        #loss_discriminator.backward()
         optimizer_d.step()
 
         if iteration % opts.log_frequency == opts.log_frequency - 1:
